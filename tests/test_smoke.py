@@ -94,6 +94,48 @@ class OrderSmokeTests(unittest.TestCase):
         self.assertEqual(len(self.service.list_orders()), 2)
         self.assertEqual(self.service.list_orders()[0]["status"], "cancelled")
         self.assertEqual(self.service.list_orders()[1]["status"], "placed")
+    
+    def test_express_delivery_quote_regular(self):
+        # 2 notebooks ($10.00) + express ($12.00) = $22.00 (2200 cents)
+        quote = self.service.quote("regular", [{"product_id": "notebook", "quantity": 2}], "express")
+        self.assertEqual(quote["subtotal_cents"], 1000)
+        self.assertEqual(quote["discount_cents"], 0)
+        self.assertEqual(quote["delivery_cents"], 1200)
+        self.assertEqual(quote["total_cents"], 2200)
+
+    def test_express_delivery_quote_student(self):
+        # 2 hoodies ($80.00) - 10% student discount ($8.00) + express ($12.00) = $84.00 (8400 cents)
+        quote = self.service.quote("student", [{"product_id": "hoodie", "quantity": 2}], "express")
+        self.assertEqual(quote["subtotal_cents"], 8000)
+        self.assertEqual(quote["discount_cents"], 800)
+        self.assertEqual(quote["delivery_cents"], 1200)
+        self.assertEqual(quote["total_cents"], 8400)
+    
+    def test_express_delivery_not_waived_for_high_subtotal(self):
+        # 3 hoodies ($120.00) with standard delivery is free ($120.00 / 12000 cents)
+        standard_quote = self.service.quote("regular", [{"product_id": "hoodie", "quantity": 3}], "delivery")
+        self.assertEqual(standard_quote["delivery_cents"], 0)
+        self.assertEqual(standard_quote["total_cents"], 12000)
+
+        # 3 hoodies ($120.00) with express delivery fee is NOT waived ($132.00 / 13200 cents)
+        express_quote = self.service.quote("regular", [{"product_id": "hoodie", "quantity": 3}], "express")
+        self.assertEqual(express_quote["delivery_cents"], 1200)
+        self.assertEqual(express_quote["total_cents"], 13200)
+    
+    def test_place_and_cancel_express_order(self):
+        order = self.service.place_order("student", [{"product_id": "hoodie", "quantity": 2}], "express")
+        self.assertEqual(order["fulfillment"], "express")
+        self.assertEqual(order["total_cents"], 8400)
+        
+        # Verify persistence and retrieval
+        reopened = self.service.get_order(order["order_id"])
+        self.assertEqual(reopened["fulfillment"], "express")
+        self.assertEqual(reopened["total_cents"], 8400)
+        
+        # Verify cancellation behavior is preserved
+        cancelled = self.service.cancel_order(order["order_id"])
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["fulfillment"], "express")
 
 
 if __name__ == "__main__":
